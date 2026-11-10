@@ -1,67 +1,82 @@
-# CareConnect on Vercel (multi-service)
-
-Vercel ab **frontend + backend** ek hi project me Services se deploy karta hai.
+# CareConnect on Vercel (multi-service + Postgres)
 
 | Service | Path | Folder |
 |---------|------|--------|
 | Angular UI | `/` | `frontend/` |
 | FastAPI | `/api/*` | `backend/` |
+| Postgres | Neon via Vercel Storage | Marketplace |
 
-Root `vercel.json` already configures this.
+Root `vercel.json` configures frontend + backend services.
 
-## Import steps (Vercel UI)
+## 1) Import project
 
-1. Open https://vercel.com/new
-2. Select `jitendrajangra788/project-alpha`
-3. Click **Import multi-service project** (after `vercel.json` is on `main`)
-4. Deploy
+1. https://vercel.com/new → select `jitendrajangra788/project-alpha`
+2. **Import multi-service project**
+3. Deploy once (API may fail until DB is connected — OK)
 
-Agar purana warning dikhe (“needs a vercel.json”), page refresh / re-import karo — `main` pe latest commit hona chahiye.
+## 2) Connect Postgres (Neon) on Vercel
 
-## Environment variables (Project → Settings → Environment Variables)
+### Dashboard (recommended)
 
-Backend ke liye **required**:
+1. Vercel project → **Storage** → **Create Database** → **Neon Postgres** (or Marketplace → Neon)
+2. Plan: **Free**
+3. **Connect Project** → this project → environments: Production + Preview (+ Development)
+4. Vercel injects `DATABASE_URL` / `POSTGRES_URL` automatically
 
-| Name | Example |
-|------|---------|
+### CLI (if logged in)
+
+```bash
+npx vercel login
+npx vercel link
+npx vercel install neon --name careconnect-db --billing-plan free -e production -e preview
+npx vercel env pull .env.local --yes
+```
+
+## 3) Other required env vars
+
+Project → Settings → Environment Variables:
+
+| Name | Value |
+|------|--------|
 | `APP_ENV` | `production` |
-| `SECRET_KEY` | 32+ random chars |
-| `DATABASE_URL` | Neon/Supabase Postgres URL (`postgres://…` OK) |
+| `SECRET_KEY` | 32+ random characters |
 | `CORS_ORIGINS` | `https://YOUR-APP.vercel.app` |
 | `FRONTEND_URL` | `https://YOUR-APP.vercel.app` |
 | `REDIS_OPTIONAL` | `true` |
 | `RAZORPAY_MOCK` | `true` |
 | `TRUSTED_HOSTS` | `*` |
-| `ENABLE_DOCS` | `true` (optional) |
+| `ENABLE_DOCS` | `true` |
+| `API_BASE_URL` | `/api/v1` (optional; default) |
 
-Frontend (optional — same-origin default already works):
+`DATABASE_URL` usually comes from Neon connection — do not invent it.
 
-| Name | Value |
-|------|--------|
-| `API_BASE_URL` | `/api/v1` |
+## 4) Run migrations once
 
-> Postgres free host: [Neon](https://neon.tech) or [Supabase](https://supabase.com).  
-> Vercel pe SQLite mat use karo (ephemeral disk).
-
-After first deploy, run migrations once (local against production DB or a one-off job):
+After Neon is connected, pull env and migrate:
 
 ```bash
+npx vercel env pull backend/.env.vercel --yes --environment=production
 cd backend
-$env:DATABASE_URL="postgresql+asyncpg://..."
-$env:DATABASE_URL_SYNC="postgresql+psycopg://..."
-alembic upgrade head
-python -m app.seed
+# copy DATABASE_URL into shell, then:
+python scripts/init_db.py
 ```
 
-## Local check
+Or locally:
 
-```bash
-# From repo root
-npx vercel dev
+```powershell
+$env:DATABASE_URL="postgres://…from Neon…"
+$env:DATABASE_URL_SYNC=$env:DATABASE_URL
+python scripts/init_db.py
 ```
+
+## 5) Redeploy
+
+Vercel → Deployments → Redeploy (or `git push`).
+
+Health check: `https://YOUR-APP.vercel.app/api/v1/health`
 
 ## Notes
 
-- API health: `https://YOUR-APP.vercel.app/api/v1/health`
-- Video/WebRTC & large uploads have serverless limits; for heavy production prefer Render/Fly for API.
-- Free Neon + Vercel is enough to open the full UI + login flows.
+- Backend accepts `DATABASE_URL` **or** `POSTGRES_URL` (Neon/Vercel).
+- Neon TLS (`ssl=require`) is auto-normalized for asyncpg/psycopg.
+- Do not use SQLite on Vercel (ephemeral disk).

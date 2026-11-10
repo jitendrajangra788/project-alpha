@@ -1,8 +1,25 @@
 from functools import lru_cache
 from typing import List, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _ensure_postgres_ssl(url: str, *, async_driver: bool) -> str:
+    """Neon / Vercel Postgres require TLS; normalize query params per driver."""
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    host = (parts.hostname or "").lower()
+    needs_ssl = any(x in host for x in ("neon.tech", "vercel-storage.com", "supabase.co")) or "sslmode" in query or "ssl" in query
+    if needs_ssl:
+        if async_driver:
+            query.pop("sslmode", None)
+            query.setdefault("ssl", "require")
+        else:
+            query.pop("ssl", None)
+            query.setdefault("sslmode", "require")
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), parts.fragment))
 
 WEAK_SECRETS = {
     "change-me-to-a-long-random-secret-key",
@@ -13,7 +30,12 @@ WEAK_SECRETS = {
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
 
     app_name: str = "CareConnect"
     app_env: str = "development"
@@ -25,13 +47,20 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:4200"
     trusted_hosts: str = "*"
 
-    database_url: str = "postgresql+asyncpg://careconnect:careconnect@localhost:5432/careconnect"
-    database_url_sync: str = "postgresql+psycopg://careconnect:careconnect@localhost:5432/careconnect"
+    # Neon/Vercel may inject DATABASE_URL or POSTGRES_URL
+    database_url: str = Field(
+        default="postgresql+asyncpg://careconnect:careconnect@localhost:5432/careconnect",
+        validation_alias=AliasChoices("DATABASE_URL", "POSTGRES_URL", "POSTGRES_PRISMA_URL"),
+    )
+    database_url_sync: str = Field(
+        default="postgresql+psycopg://careconnect:careconnect@localhost:5432/careconnect",
+        validation_alias=AliasChoices("DATABASE_URL_SYNC", "POSTGRES_URL_NON_POOLING"),
+    )
 
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_async_database_url(cls, value: object) -> object:
-        """Render/Neon often provide postgres:// — SQLAlchemy async needs +asyncpg."""
+        """Render/Neon/Vercel often provide postgres:// — SQLAlchemy async needs +asyncpg."""
         if not isinstance(value, str) or not value:
             return value
         url = value.strip()
@@ -39,7 +68,7 @@ class Settings(BaseSettings):
             url = "postgresql://" + url[len("postgres://") :]
         if url.startswith("postgresql://") and "+asyncpg" not in url and "+psycopg" not in url:
             url = "postgresql+asyncpg://" + url[len("postgresql://") :]
-        return url
+        return _ensure_postgres_ssl(url, async_driver=True)
 
     @field_validator("database_url_sync", mode="before")
     @classmethod
@@ -53,7 +82,7 @@ class Settings(BaseSettings):
             url = "postgresql+psycopg://" + url[len("postgresql+asyncpg://") :]
         elif url.startswith("postgresql://") and "+psycopg" not in url:
             url = "postgresql+psycopg://" + url[len("postgresql://") :]
-        return url
+        return _ensure_postgres_ssl(url, async_driver=False)
 
     redis_url: str = "redis://localhost:6379/0"
     redis_optional: bool = True
@@ -119,7 +148,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def fill_sync_database_url(self) -> "Settings":
-        """If only DATABASE_URL is set (Render), derive the sync Alembic URL."""
+        """If only DATABASE_URL / POSTGRES_URL is set, derive the sync Alembic URL."""
         if self.database_url and (
             not self.database_url_sync
             or self.database_url_sync.startswith("postgresql+psycopg://careconnect:careconnect@localhost")
@@ -127,6 +156,7 @@ class Settings(BaseSettings):
             sync = self.database_url
             if sync.startswith("postgresql+asyncpg://"):
                 sync = "postgresql+psycopg://" + sync[len("postgresql+asyncpg://") :]
+            sync = _ensure_postgres_ssl(sync, async_driver=False)
             object.__setattr__(self, "database_url_sync", sync)
         return self
 
