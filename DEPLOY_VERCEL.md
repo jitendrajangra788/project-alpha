@@ -8,7 +8,15 @@
 
 Root `vercel.json` configures frontend + backend services.
 
-Backend Python deps are declared in **both** `backend/requirements.txt` and `backend/pyproject.toml` `[project].dependencies` (Vercel reads these from the backend service root). If logs show `No module named 'fastapi'`, redeploy after confirming those files are on `main`.
+### Critical: Project Root Directory
+
+Vercel Project → **Settings → General → Root Directory** must be **empty / repository root** (not `frontend/`).  
+Services mode needs both `frontend/` and `backend/` visible.
+
+### Backend Python deps
+
+Vercel installs from `backend/pyproject.toml` + `backend/uv.lock` (same pattern as Vercel’s official Python+Next starter).  
+`backend/requirements.txt` is kept for local/Docker. Do **not** override backend `installCommand` with plain `pip` — that can skip the runtime dependency bundle and cause `No module named 'fastapi'`.
 
 ## 1) Import project
 
