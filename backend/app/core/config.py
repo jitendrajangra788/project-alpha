@@ -149,11 +149,16 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def fill_sync_database_url(self) -> "Settings":
         """If only DATABASE_URL / POSTGRES_URL is set, derive the sync Alembic URL."""
-        if self.database_url and (
-            not self.database_url_sync
-            or self.database_url_sync.startswith("postgresql+psycopg://careconnect:careconnect@localhost")
-        ):
-            sync = self.database_url
+        async_url = self.database_url or ""
+        sync_url = self.database_url_sync or ""
+        should_derive = async_url.startswith("postgresql") and (
+            not sync_url
+            or "localhost" in sync_url
+            or sync_url.startswith("sqlite")
+            or sync_url.startswith("postgresql+psycopg://careconnect:careconnect@localhost")
+        )
+        if should_derive:
+            sync = async_url
             if sync.startswith("postgresql+asyncpg://"):
                 sync = "postgresql+psycopg://" + sync[len("postgresql+asyncpg://") :]
             sync = _ensure_postgres_ssl(sync, async_driver=False)
