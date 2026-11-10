@@ -3,6 +3,26 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 
+function apiError(err: any, fallback: string): string {
+  const detail = err?.error?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item: any) => {
+        const field = Array.isArray(item?.loc)
+          ? item.loc.filter((x: unknown) => x !== 'body').join('.')
+          : '';
+        const msg = item?.msg || item?.message || '';
+        return field ? `${field}: ${msg}` : msg;
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join(' · ');
+  }
+  if (err?.status === 0) return 'Network error. Check your connection and try again.';
+  if (err?.status === 409) return 'Mobile or email already registered. Try login instead.';
+  return fallback;
+}
+
 @Component({
   selector: 'app-register-doctor',
   standalone: true,
@@ -23,19 +43,32 @@ import { AuthService } from '../../core/auth.service';
       <section class="card">
         @if (step === 1) {
           <h2>Create your account</h2>
-          <form [formGroup]="accountForm" (ngSubmit)="step = 2">
-            <label>Full name *<input formControlName="full_name" /></label>
+          <form [formGroup]="accountForm" (ngSubmit)="goStep2()">
+            <label>
+              Full name *
+              <input formControlName="full_name" autocomplete="name" placeholder="Dr. Anita Sharma" />
+            </label>
             <div class="grid2">
-              <label>Mobile *<input formControlName="mobile" /></label>
-              <label>Email<input type="email" formControlName="email" /></label>
+              <label>
+                Mobile *
+                <input formControlName="mobile" inputmode="numeric" autocomplete="tel" placeholder="10-digit mobile" />
+              </label>
+              <label>
+                Email (optional)
+                <input type="email" formControlName="email" autocomplete="email" placeholder="doctor@example.com" />
+              </label>
             </div>
-            <label>Password *<input type="password" formControlName="password" /></label>
+            <label>
+              Password *
+              <input type="password" formControlName="password" autocomplete="new-password" placeholder="Min 8 characters" />
+            </label>
+            @if (error && step === 1) { <p class="error">{{ error }}</p> }
             <button class="cc-btn cc-btn-accent" type="submit" [disabled]="accountForm.invalid">Continue</button>
           </form>
         }
         @if (step === 2) {
           <h2>Professional details</h2>
-          <form [formGroup]="proForm" (ngSubmit)="step = 3">
+          <form [formGroup]="proForm" (ngSubmit)="step = 3; error = ''">
             <div class="grid2">
               <label>Specialty<input formControlName="specialty" placeholder="Cardiology" /></label>
               <label>Qualification<input formControlName="qualification" placeholder="MBBS, MD" /></label>
@@ -45,8 +78,8 @@ import { AuthService } from '../../core/auth.service';
               <label>Registration council<input formControlName="registration_council" /></label>
             </div>
             <div class="grid2">
-              <label>Years of experience<input type="number" formControlName="years_of_experience" /></label>
-              <label>Consultation fee (₹)<input type="number" formControlName="consultation_fee" /></label>
+              <label>Years of experience<input type="number" min="0" formControlName="years_of_experience" /></label>
+              <label>Consultation fee (₹)<input type="number" min="0" formControlName="consultation_fee" /></label>
             </div>
             <label>About<textarea formControlName="about" rows="3"></textarea></label>
             <div class="actions">
@@ -59,13 +92,19 @@ import { AuthService } from '../../core/auth.service';
           <h2>Practice location</h2>
           <form [formGroup]="locForm" (ngSubmit)="submit()">
             <div class="grid2">
-              <label>City<input formControlName="city" /></label>
-              <label>PIN code<input formControlName="pin_code" /></label>
+              <label>
+                City *
+                <input formControlName="city" placeholder="Jaipur" />
+              </label>
+              <label>
+                PIN code *
+                <input formControlName="pin_code" inputmode="numeric" placeholder="6-digit PIN" />
+              </label>
             </div>
             @if (error) { <p class="error">{{ error }}</p> }
             <div class="actions">
               <button class="cc-btn cc-btn-ghost" type="button" (click)="step = 2">Back</button>
-              <button class="cc-btn cc-btn-accent" type="submit" [disabled]="loading">
+              <button class="cc-btn cc-btn-accent" type="submit" [disabled]="loading || locForm.invalid">
                 {{ loading ? 'Submitting…' : 'Complete doctor registration' }}
               </button>
             </div>
@@ -101,7 +140,7 @@ import { AuthService } from '../../core/auth.service';
       border: 1px solid var(--cc-border); border-radius: 10px; padding: 0.7rem 0.8rem; font: inherit; color: var(--cc-navy);
     }
     .actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-    .error { color: var(--cc-danger); margin: 0; }
+    .error { color: var(--cc-danger); margin: 0; font-weight: 650; }
     @media (max-width: 860px) { .wrap, .grid2 { grid-template-columns: 1fr; } }
   `,
 })
@@ -116,8 +155,8 @@ export class RegisterDoctorComponent {
 
   readonly accountForm = this.fb.nonNullable.group({
     full_name: ['', [Validators.required, Validators.minLength(2)]],
-    mobile: ['', [Validators.required, Validators.minLength(10)]],
-    email: [''],
+    mobile: ['', [Validators.required, Validators.pattern(/^\d{10}$/)]],
+    email: ['', [Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
   });
 
@@ -132,29 +171,73 @@ export class RegisterDoctorComponent {
   });
 
   readonly locForm = this.fb.nonNullable.group({
-    city: [''],
-    pin_code: [''],
+    city: ['', [Validators.required, Validators.minLength(2)]],
+    pin_code: ['', [Validators.required, Validators.pattern(/^\d{6}$/)]],
   });
 
-  submit(): void {
+  goStep2(): void {
+    this.error = '';
+    this.accountForm.markAllAsTouched();
     if (this.accountForm.invalid) {
-      this.step = 1;
+      this.error = 'Please fill name, 10-digit mobile and password (8+ characters).';
       return;
     }
-    this.loading = true;
+    this.step = 2;
+  }
+
+  private cleanNumber(value: unknown): number | undefined {
+    if (value === null || value === undefined || value === '') return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  }
+
+  submit(): void {
     this.error = '';
+    if (this.accountForm.invalid) {
+      this.step = 1;
+      this.error = 'Please fix account details first.';
+      return;
+    }
+    this.locForm.markAllAsTouched();
+    if (this.locForm.invalid) {
+      this.error = 'Enter city and a valid 6-digit PIN code.';
+      return;
+    }
+
+    this.loading = true;
     const account = this.accountForm.getRawValue();
     const pro = this.proForm.getRawValue();
     const loc = this.locForm.getRawValue();
+    const mobile = String(account.mobile || '').replace(/\D/g, '').slice(-10);
+
     const payload: Record<string, unknown> = {
-      full_name: account.full_name,
-      mobile: account.mobile,
+      full_name: account.full_name.trim(),
+      mobile,
       password: account.password,
+      city: loc.city.trim(),
+      pin_code: loc.pin_code.trim(),
     };
-    if (account.email) payload['email'] = account.email;
-    Object.entries({ ...pro, ...loc }).forEach(([k, v]) => {
-      if (v !== null && v !== undefined && v !== '') payload[k] = v;
-    });
+
+    const email = account.email?.trim();
+    if (email) payload['email'] = email;
+
+    const textFields: Array<[string, string]> = [
+      ['specialty', pro.specialty],
+      ['qualification', pro.qualification],
+      ['registration_number', pro.registration_number],
+      ['registration_council', pro.registration_council],
+      ['about', pro.about],
+    ];
+    for (const [key, val] of textFields) {
+      const cleaned = (val || '').trim();
+      if (cleaned) payload[key] = cleaned;
+    }
+
+    const years = this.cleanNumber(pro.years_of_experience);
+    if (years !== undefined) payload['years_of_experience'] = years;
+    const fee = this.cleanNumber(pro.consultation_fee);
+    if (fee !== undefined) payload['consultation_fee'] = fee;
+
     this.auth.registerDoctor(payload).subscribe({
       next: () => {
         this.loading = false;
@@ -162,7 +245,9 @@ export class RegisterDoctorComponent {
       },
       error: (err) => {
         this.loading = false;
-        this.error = typeof err?.error?.detail === 'string' ? err.error.detail : 'Doctor registration failed';
+        this.error = apiError(err, 'Doctor registration failed. Please try again.');
+        // Duplicate identity → send user back to account step
+        if (err?.status === 409) this.step = 1;
       },
     });
   }

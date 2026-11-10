@@ -1,7 +1,24 @@
 from datetime import date
 from typing import List, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+
+
+def _blank_to_none(value: object) -> object:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
+def _normalize_mobile(value: object) -> str:
+    raw = str(value or "").strip()
+    digits = "".join(ch for ch in raw if ch.isdigit())
+    if len(digits) < 10:
+        raise ValueError("Mobile must have at least 10 digits")
+    # Prefer last 10 digits for Indian numbers with country code
+    return digits[-10:] if len(digits) > 10 else digits
 
 
 class PatientRegisterRequest(BaseModel):
@@ -11,6 +28,16 @@ class PatientRegisterRequest(BaseModel):
     email: Optional[EmailStr] = None
     date_of_birth: Optional[date] = None
     gender: Optional[str] = None
+
+    @field_validator("email", "gender", mode="before")
+    @classmethod
+    def empty_optional(cls, value: object) -> object:
+        return _blank_to_none(value)
+
+    @field_validator("mobile", mode="before")
+    @classmethod
+    def clean_mobile(cls, value: object) -> str:
+        return _normalize_mobile(value)
 
 
 class DoctorRegisterRequest(BaseModel):
@@ -22,11 +49,40 @@ class DoctorRegisterRequest(BaseModel):
     qualification: Optional[str] = None
     registration_number: Optional[str] = None
     registration_council: Optional[str] = None
-    years_of_experience: Optional[int] = None
-    consultation_fee: Optional[float] = None
+    years_of_experience: Optional[int] = Field(default=None, ge=0, le=80)
+    consultation_fee: Optional[float] = Field(default=None, ge=0)
     city: Optional[str] = None
     pin_code: Optional[str] = None
     about: Optional[str] = None
+
+    @field_validator(
+        "email",
+        "specialty",
+        "qualification",
+        "registration_number",
+        "registration_council",
+        "city",
+        "pin_code",
+        "about",
+        mode="before",
+    )
+    @classmethod
+    def empty_optional(cls, value: object) -> object:
+        return _blank_to_none(value)
+
+    @field_validator("years_of_experience", "consultation_fee", mode="before")
+    @classmethod
+    def empty_number(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @field_validator("mobile", mode="before")
+    @classmethod
+    def clean_mobile(cls, value: object) -> str:
+        return _normalize_mobile(value)
 
 
 class LoginRequest(BaseModel):

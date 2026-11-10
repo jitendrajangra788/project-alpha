@@ -131,34 +131,51 @@ async def register_patient(db: AsyncSession, payload: PatientRegisterRequest) ->
 
 async def register_doctor(db: AsyncSession, payload: DoctorRegisterRequest) -> tuple[User, dict]:
     await ensure_unique_identity(db, payload.mobile, payload.email)
-    user = User(
-        full_name=payload.full_name,
-        mobile=payload.mobile,
-        email=str(payload.email) if payload.email else None,
-        password_hash=hash_password(payload.password),
-    )
-    db.add(user)
-    await db.flush()
-    await assign_role(db, user, RoleCode.DOCTOR.value)
-    doctor = Doctor(
-        user_id=user.id,
-        specialty=payload.specialty,
-        qualification=payload.qualification,
-        registration_number=payload.registration_number,
-        registration_council=payload.registration_council,
-        years_of_experience=payload.years_of_experience,
-        consultation_fee=payload.consultation_fee,
-        city=payload.city,
-        pin_code=payload.pin_code,
-        about=payload.about,
-    )
-    db.add(doctor)
-    await db.flush()
-    from app.services.marketplace import upsert_listing_for_doctor
+    try:
+        user = User(
+            full_name=payload.full_name.strip(),
+            mobile=payload.mobile,
+            email=str(payload.email) if payload.email else None,
+            password_hash=hash_password(payload.password),
+        )
+        db.add(user)
+        await db.flush()
+        await assign_role(db, user, RoleCode.DOCTOR.value)
+        doctor = Doctor(
+            user_id=user.id,
+            specialty=payload.specialty,
+            qualification=payload.qualification,
+            registration_number=payload.registration_number,
+            registration_council=payload.registration_council,
+            years_of_experience=payload.years_of_experience,
+            consultation_fee=payload.consultation_fee,
+            city=payload.city or "India",
+            pin_code=payload.pin_code or "000000",
+            about=payload.about,
+        )
+        db.add(doctor)
+        await db.flush()
+        from app.services.marketplace import upsert_listing_for_doctor
 
-    await upsert_listing_for_doctor(db, doctor, user)
-    await write_audit(db, action="doctor.register", resource_type="user", resource_id=user.id, actor_user_id=user.id)
-    await db.commit()
+        await upsert_listing_for_doctor(db, doctor, user)
+        await write_audit(db, action="doctor.register", resource_type="user", resource_id=user.id, actor_user_id=user.id)
+        await db.commit()
+    except HTTPException:
+        await db.rollback()
+        raise
+    except Exception as exc:
+        await db.rollback()
+        msg = str(exc).lower()
+        if "unique" in msg or "duplicate" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Mobile or email already registered",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not complete doctor registration. Please check details and try again.",
+        ) from exc
+
     user = await load_user(db, user.id)
     assert user
     tokens = await issue_tokens(db, user)
