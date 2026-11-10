@@ -47,7 +47,13 @@ function friendlyDetail(err: any, fallback: string): string {
           <a class="back" [routerLink]="dashboardLink">← Dashboard</a>
           <div class="title-row">
             <h1>Live consult</h1>
-            <span class="pill" [class.live]="status === 'live'" [class.warn]="status === 'connecting' || status === 'joined'" [class.bad]="status === 'error' || status === 'media-blocked'" [class.done]="status === 'ended'">
+            <span
+              class="pill"
+              [class.live]="status === 'live'"
+              [class.warn]="status === 'connecting' || status === 'joined' || status === 'need-media'"
+              [class.bad]="status === 'error' || status === 'media-blocked'"
+              [class.done]="status === 'ended'"
+            >
               <i class="dot"></i>{{ statusLabel }}
             </span>
           </div>
@@ -85,12 +91,16 @@ function friendlyDetail(err: any, fallback: string): string {
                 <div class="rings" aria-hidden="true"><span></span><span></span><span></span></div>
                 <h2>{{ waitingHeadline }}</h2>
                 <p>{{ waitingText }}</p>
-                @if (status === 'media-blocked') {
+                @if (status === 'need-media' || status === 'media-blocked') {
                   <div class="perm-actions">
-                    <button type="button" class="ghost-btn" (click)="retryMedia()">Allow camera & mic</button>
-                    <button type="button" class="ghost-btn soft" (click)="retryMedia(true)">Join audio only</button>
+                    <button type="button" class="ghost-btn" [disabled]="mediaBusy" (click)="enableMedia(false)">
+                      {{ mediaBusy ? 'Requesting…' : 'Allow camera & mic' }}
+                    </button>
+                    <button type="button" class="ghost-btn soft" [disabled]="mediaBusy" (click)="enableMedia(true)">
+                      Join audio only
+                    </button>
                   </div>
-                  <p class="hint">Browser address bar → site settings → allow Camera & Microphone, then retry.</p>
+                  <p class="hint">{{ mediaHint }}</p>
                 }
               </div>
             }
@@ -104,7 +114,7 @@ function friendlyDetail(err: any, fallback: string): string {
           </div>
 
           <div class="local pane" [class.off]="cameraOff || !localStreamReady">
-            <video #localVideo autoplay playsinline muted></video>
+            <video #localVideo autoplay playsinline muted [attr.playsinline]="true" [muted]="true"></video>
             <span class="name-tag">You{{ muted ? ' · muted' : '' }}{{ cameraOff ? ' · cam off' : '' }}</span>
             @if (cameraOff || !localStreamReady) {
               <div class="local-fallback">{{ cameraOff ? 'Camera off' : 'Preview' }}</div>
@@ -553,6 +563,8 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   muted = false;
   cameraOff = false;
   localStreamReady = false;
+  mediaBusy = false;
+  mediaHint = 'Tap Allow so the browser can show the camera/mic permission popup.';
   sidePanel: 'chat' | 'reports' | 'notes' | null = null;
 
   chat: ChatMessage[] = [];
@@ -613,6 +625,8 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
         return 'Connecting';
       case 'joined':
         return 'Ready';
+      case 'need-media':
+        return 'Enable media';
       case 'live':
         return 'Live';
       case 'ended':
@@ -629,7 +643,8 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   }
 
   get waitingHeadline(): string {
-    if (this.status === 'media-blocked') return 'Enable camera access';
+    if (this.status === 'need-media') return 'Start your camera';
+    if (this.status === 'media-blocked') return 'Camera / mic blocked';
     if (this.status === 'error') return 'Unable to join';
     if (this.status === 'peer-left') return 'Participant left';
     return 'Waiting to connect';
@@ -638,6 +653,9 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   get waitingText(): string {
     if (this.status === 'ended') return 'Call ended';
     if (this.status === 'error') return this.message || 'This consultation room is unavailable.';
+    if (this.status === 'need-media') {
+      return 'Browser security requires a tap before camera and microphone can start.';
+    }
     if (this.status === 'media-blocked') {
       return this.message || 'Allow camera and microphone to start a secure video consult.';
     }
@@ -658,12 +676,15 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
     });
 
     this.videoApi.join(this.sessionId).subscribe({
-      next: async (info) => {
+      next: (info) => {
         this.joinInfo = info;
         this.pendingJoinInfo = info;
         this.polite = info.role === 'patient';
-        this.status = 'joined';
-        await this.startMedia(info);
+        // Wait for an explicit user tap — required on mobile browsers for getUserMedia.
+        this.status = 'need-media';
+        this.mediaHint = window.isSecureContext
+          ? 'Tap Allow camera & mic. If no popup appears, check the lock icon in the address bar.'
+          : 'This page must be opened on HTTPS for camera access.';
       },
       error: (err) => {
         this.message = typeof err?.error?.detail === 'string' ? err.error.detail : 'Unable to join room';
@@ -683,10 +704,20 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   }
 
   async retryMedia(audioOnly = false): Promise<void> {
-    if (!this.pendingJoinInfo && !this.joinInfo) return;
+    await this.enableMedia(audioOnly);
+  }
+
+  async enableMedia(audioOnly = false): Promise<void> {
+    if (this.mediaBusy) return;
+    const info = this.pendingJoinInfo || this.joinInfo;
+    if (!info) return;
+    this.mediaBusy = true;
     this.message = '';
-    this.status = 'joined';
-    await this.startMedia(this.pendingJoinInfo || this.joinInfo!, audioOnly);
+    try {
+      await this.startMedia(info, audioOnly);
+    } finally {
+      this.mediaBusy = false;
+    }
   }
 
   private loadRecords(patientId: string): void {
@@ -743,44 +774,51 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   }
 
   private async startMedia(info: VideoJoinInfo, audioOnly = false): Promise<void> {
-    this.cleanupPeerOnly();
-    try {
-      this.localStream = await navigator.mediaDevices.getUserMedia(
-        audioOnly ? { video: false, audio: true } : { video: true, audio: true },
-      );
-      this.cameraOff = audioOnly;
-      this.localStreamReady = true;
-    } catch {
-      if (!audioOnly) {
-        // Fallback attempt: audio only
-        try {
-          this.localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-          this.cameraOff = true;
-          this.localStreamReady = true;
-          this.message = 'Camera unavailable — joined with audio only.';
-        } catch {
-          this.localStreamReady = false;
-          this.message = 'Camera/microphone permission is required for video consult.';
-          this.status = 'media-blocked';
-          return;
-        }
-      } else {
-        this.localStreamReady = false;
-        this.message = 'Microphone permission is required to join.';
-        this.status = 'media-blocked';
-        return;
-      }
+    if (!window.isSecureContext) {
+      this.localStreamReady = false;
+      this.status = 'media-blocked';
+      this.message = 'Camera/mic only work on HTTPS. Open the https:// CareConnect URL.';
+      this.mediaHint = 'Use the Vercel https link, not http://localhost without secure context.';
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      this.localStreamReady = false;
+      this.status = 'media-blocked';
+      this.message = 'This browser does not support camera/microphone APIs.';
+      this.mediaHint = 'Try Chrome or Edge on desktop, or Safari/Chrome on phone.';
+      return;
     }
 
-    if (this.localVideoRef) {
-      this.localVideoRef.nativeElement.srcObject = this.localStream || null;
+    this.cleanupPeerOnly();
+
+    try {
+      this.localStream = await this.acquireStream(audioOnly);
+      this.cameraOff = audioOnly || !this.localStream.getVideoTracks().length;
+      this.muted = !this.localStream.getAudioTracks().length;
+      this.localStreamReady = true;
+      if (this.cameraOff && !audioOnly) {
+        this.message = 'Camera unavailable — connected with microphone only.';
+      }
+    } catch (err) {
+      this.localStreamReady = false;
+      this.status = 'media-blocked';
+      this.message = this.mediaErrorMessage(err, audioOnly);
+      this.mediaHint =
+        'Address bar → site settings (lock icon) → Camera & Microphone = Allow → reload → tap button again.';
+      return;
     }
+
+    await this.attachLocalPreview(this.localStream);
+    this.status = 'joined';
 
     this.pc = new RTCPeerConnection({ iceServers: info.ice_servers as RTCIceServer[] });
-    this.localStream?.getTracks().forEach((track) => this.pc!.addTrack(track, this.localStream!));
+    this.localStream.getTracks().forEach((track) => this.pc!.addTrack(track, this.localStream!));
     this.pc.ontrack = (event) => {
-      if (this.remoteVideoRef) {
-        this.remoteVideoRef.nativeElement.srcObject = event.streams[0];
+      const remote = event.streams[0];
+      const el = this.remoteVideoRef?.nativeElement;
+      if (el && remote) {
+        el.srcObject = remote;
+        void el.play().catch(() => undefined);
       }
       this.markLive();
     };
@@ -801,6 +839,75 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
         await this.createOffer();
       }
     };
+  }
+
+  private async acquireStream(audioOnly: boolean): Promise<MediaStream> {
+    const attempts: MediaStreamConstraints[] = audioOnly
+      ? [{ audio: true, video: false }, { audio: true }]
+      : [
+          { audio: true, video: { facingMode: 'user' } },
+          { audio: true, video: true },
+          { audio: true, video: { width: { ideal: 640 }, height: { ideal: 480 } } },
+          { audio: true, video: false },
+        ];
+
+    let lastError: unknown;
+    for (const constraints of attempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (!audioOnly && !stream.getVideoTracks().length) {
+          // Keep going if we still want video and only got audio from a soft fallback later
+        }
+        return stream;
+      } catch (err) {
+        lastError = err;
+        const name = (err as DOMException)?.name || '';
+        // Permission denied won't succeed with other constraints
+        if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+          throw err;
+        }
+      }
+    }
+    throw lastError || new Error('Unable to access media devices');
+  }
+
+  private async attachLocalPreview(stream?: MediaStream): Promise<void> {
+    const el = this.localVideoRef?.nativeElement;
+    if (!el) return;
+    el.srcObject = stream || null;
+    el.muted = true;
+    el.defaultMuted = true;
+    el.setAttribute('playsinline', 'true');
+    el.setAttribute('webkit-playsinline', 'true');
+    if (stream) {
+      try {
+        await el.play();
+      } catch {
+        // Autoplay can fail until another gesture; muted+playsinline usually OK.
+      }
+    }
+  }
+
+  private mediaErrorMessage(err: unknown, audioOnly: boolean): string {
+    const name = (err as DOMException)?.name || '';
+    if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+      return 'Permission blocked in browser. Allow Camera & Microphone for this site, then tap again.';
+    }
+    if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      return audioOnly
+        ? 'No microphone found on this device.'
+        : 'No camera/microphone found. Plug in a device or use audio-only.';
+    }
+    if (name === 'NotReadableError' || name === 'TrackStartError') {
+      return 'Camera/mic is already in use by Zoom/Meet/another tab. Close it and retry.';
+    }
+    if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+      return 'Camera settings not supported on this device. Try audio only.';
+    }
+    if (name === 'SecurityError') {
+      return 'Browser blocked media for security reasons. Use HTTPS.';
+    }
+    return 'Could not start camera/microphone. Check browser permission and try again.';
   }
 
   private markLive(): void {
@@ -977,18 +1084,22 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
     });
   }
 
-  toggleMute(): void {
-    this.muted = !this.muted;
-    this.localStream?.getAudioTracks().forEach((t) => (t.enabled = !this.muted));
-  }
-
   toggleCamera(): void {
     if (!this.localStream?.getVideoTracks().length) {
-      void this.retryMedia(false);
+      void this.enableMedia(false);
       return;
     }
     this.cameraOff = !this.cameraOff;
-    this.localStream?.getVideoTracks().forEach((t) => (t.enabled = !this.cameraOff));
+    this.localStream.getVideoTracks().forEach((t) => (t.enabled = !this.cameraOff));
+  }
+
+  toggleMute(): void {
+    if (!this.localStream?.getAudioTracks().length) {
+      void this.enableMedia(true);
+      return;
+    }
+    this.muted = !this.muted;
+    this.localStream.getAudioTracks().forEach((t) => (t.enabled = !this.muted));
   }
 
   hangup(): void {
