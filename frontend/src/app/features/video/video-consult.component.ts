@@ -1,10 +1,18 @@
 import { DatePipe } from '@angular/common';
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild, inject } from '@angular/core';
 import { FormBuilder, FormsModule, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { AuthService } from '../../core/auth.service';
 import { ClinicalService } from '../../core/clinical.service';
 import { VideoJoinInfo, VideoService, VideoSession } from '../../core/video.service';
+
+interface ChatReportShare {
+  reportId: string;
+  title: string;
+  status?: string;
+  summary?: string;
+  kind: 'lab' | 'prescription';
+}
 
 interface ChatMessage {
   id: string;
@@ -12,6 +20,8 @@ interface ChatMessage {
   fromRole: string;
   mine: boolean;
   at: Date;
+  kind?: 'text' | 'report';
+  report?: ChatReportShare;
 }
 
 @Component({
@@ -22,7 +32,7 @@ interface ChatMessage {
     <div class="page">
       <header class="top">
         <div>
-          <a class="back" [routerLink]="backLink">← Back</a>
+          <a class="back" [routerLink]="dashboardLink">← Dashboard</a>
           <h1>Video consultation</h1>
           <p class="meta">
             Room {{ joinInfo?.room_code || '…' }}
@@ -68,7 +78,7 @@ interface ChatMessage {
           </div>
 
           @if (status === 'ended') {
-            <p class="ended-msg">{{ message || 'Consultation ended.' }}</p>
+            <p class="ended-msg">{{ message || 'Consultation ended. Redirecting to dashboard…' }}</p>
           }
         </section>
 
@@ -80,14 +90,35 @@ interface ChatMessage {
             </div>
             <div class="chat-log" #chatLog>
               @for (m of chat; track m.id) {
-                <div class="bubble" [class.mine]="m.mine">
+                <div class="bubble" [class.mine]="m.mine" [class.report]="m.kind === 'report'">
                   <small>{{ m.mine ? 'You' : m.fromRole }} · {{ m.at | date: 'shortTime' }}</small>
-                  <p>{{ m.text }}</p>
+                  @if (m.kind === 'report' && m.report) {
+                    <div class="report-card">
+                      <span class="badge">{{ m.report.kind === 'lab' ? 'Lab report' : 'Prescription' }}</span>
+                      <strong>{{ m.report.title }}</strong>
+                      @if (m.report.status) {
+                        <p>{{ m.report.status }}</p>
+                      }
+                      @if (m.report.summary) {
+                        <p class="sum">{{ m.report.summary }}</p>
+                      }
+                    </div>
+                  } @else {
+                    <p>{{ m.text }}</p>
+                  }
                 </div>
               } @empty {
-                <p class="empty">Say hello — messages stay in this live session.</p>
+                <p class="empty">Say hello — patients can also share lab reports here.</p>
               }
             </div>
+            @if (joinInfo?.role === 'patient' && labReports.length && status !== 'ended') {
+              <div class="quick-share">
+                <span>Share report:</span>
+                @for (r of labReports.slice(0, 3); track r.id) {
+                  <button type="button" class="share-pill" (click)="shareLabReport(r)">{{ r.title || 'Lab report' }}</button>
+                }
+              </div>
+            }
             <form class="chat-form" (ngSubmit)="sendChat()">
               <input [(ngModel)]="chatDraft" name="chatDraft" placeholder="Type a message…" [disabled]="status === 'ended' || status === 'error'" />
               <button class="cc-btn cc-btn-accent" type="submit" [disabled]="!chatDraft.trim() || status === 'ended'">Send</button>
@@ -117,6 +148,9 @@ interface ChatMessage {
                         </li>
                       }
                     </ul>
+                    @if (status !== 'ended' && status !== 'error') {
+                      <button type="button" class="share-btn" (click)="shareLabReport(r)">Share in chat</button>
+                    }
                   </article>
                 } @empty {
                   <p class="empty">No lab reports available.</p>
@@ -132,6 +166,9 @@ interface ChatMessage {
                         <li>{{ m.medicine_name }} — {{ m.dosage }} · {{ m.frequency }}</li>
                       }
                     </ul>
+                    @if (joinInfo?.role === 'patient' && status !== 'ended' && status !== 'error') {
+                      <button type="button" class="share-btn" (click)="sharePrescription(rx)">Share in chat</button>
+                    }
                   </article>
                 } @empty {
                   <p class="empty">No prescriptions yet.</p>
@@ -257,8 +294,27 @@ interface ChatMessage {
       padding: 0.55rem 0.7rem; box-shadow: var(--cc-shadow-sm);
     }
     .bubble.mine { margin-left: auto; background: #ecfeff; border-color: #a5f3fc; }
+    .bubble.report { max-width: 94%; }
     .bubble small { display: block; color: var(--cc-slate-soft); font-size: 0.72rem; margin-bottom: 0.2rem; }
     .bubble p { margin: 0; font-size: 0.92rem; line-height: 1.4; }
+    .report-card { display: grid; gap: 0.25rem; }
+    .report-card .badge {
+      width: fit-content; background: #e0f2fe; color: #0369a1; border-radius: 999px;
+      padding: 0.12rem 0.5rem; font-size: 0.68rem; font-weight: 750; text-transform: uppercase;
+    }
+    .report-card strong { font-size: 0.92rem; color: var(--cc-navy); }
+    .report-card .sum { color: var(--cc-slate); font-size: 0.82rem; }
+    .quick-share {
+      display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center;
+      padding: 0.45rem 0.75rem; border-top: 1px solid var(--cc-border); background: #f8fbff;
+      font-size: 0.78rem; color: var(--cc-slate-soft); font-weight: 650;
+    }
+    .share-pill {
+      border: 1px solid var(--cc-border); background: white; border-radius: 999px;
+      padding: 0.28rem 0.6rem; font: inherit; font-size: 0.75rem; font-weight: 700;
+      color: var(--cc-navy); cursor: pointer; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .share-pill:hover { border-color: var(--cc-teal); color: var(--cc-teal); }
     .chat-form {
       display: grid; grid-template-columns: 1fr auto; gap: 0.5rem; padding: 0.75rem;
       border-top: 1px solid var(--cc-border); background: white;
@@ -276,6 +332,11 @@ interface ChatMessage {
     .reports strong { display: block; font-size: 0.92rem; }
     .reports p { margin: 0.2rem 0 0; color: var(--cc-slate); font-size: 0.82rem; }
     .reports ul { margin: 0.45rem 0 0; padding-left: 1rem; color: var(--cc-slate); font-size: 0.82rem; }
+    .share-btn {
+      margin-top: 0.55rem; border: 1px solid var(--cc-border); background: white; color: var(--cc-teal);
+      border-radius: 999px; padding: 0.4rem 0.75rem; font: inherit; font-size: 0.8rem; font-weight: 750; cursor: pointer;
+    }
+    .share-btn:hover { background: #ecfeff; border-color: #99f6e4; }
     .abnormal { color: var(--cc-danger); font-weight: 650; }
     .empty { margin: 0.35rem 0; color: var(--cc-slate-soft); font-size: 0.88rem; }
     .empty.warn { color: var(--cc-danger); }
@@ -301,6 +362,7 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   @ViewChild('chatLog') chatLogRef?: ElementRef<HTMLDivElement>;
 
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly videoApi = inject(VideoService);
   private readonly clinical = inject(ClinicalService);
   private readonly auth = inject(AuthService);
@@ -334,12 +396,16 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   private ws?: WebSocket;
   private makingOffer = false;
   private polite = false;
+  private ending = false;
+  private redirectTimer?: ReturnType<typeof setTimeout>;
 
-  get backLink(): string {
+  get dashboardLink(): string {
     const role = this.joinInfo?.role;
-    if (role === 'doctor') return '/doctor/bookings';
-    if (role === 'patient') return '/patient/appointments';
-    return '/my-bookings';
+    if (role === 'doctor') return '/doctor';
+    if (role === 'patient') return '/patient';
+    if (this.auth.hasAnyRole(['DOCTOR'])) return '/doctor';
+    if (this.auth.hasAnyRole(['PATIENT'])) return '/patient';
+    return '/';
   }
 
   get remoteLabel(): string {
@@ -381,6 +447,7 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   }
 
   async ngOnDestroy(): Promise<void> {
+    if (this.redirectTimer) clearTimeout(this.redirectTimer);
     this.cleanupMedia();
   }
 
@@ -476,18 +543,23 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
 
   private async handleSignal(msg: any): Promise<void> {
     if (msg.type === 'chat') {
-      const text = String(msg.payload?.text || '').trim();
-      if (!text) return;
+      const payload = msg.payload || {};
+      const report = payload.report as ChatReportShare | undefined;
+      const text = String(payload.text || '').trim();
+      if (!text && !report) return;
       this.chat = [
         ...this.chat,
         {
           id: `${Date.now()}-${Math.random()}`,
-          text,
+          text: text || report?.title || 'Shared report',
           fromRole: msg.from_role || 'peer',
           mine: false,
           at: new Date(),
+          kind: report ? 'report' : 'text',
+          report,
         },
       ];
+      if (report) this.sidePanel = 'chat';
       this.scrollChat();
       return;
     }
@@ -520,7 +592,11 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
       }
     }
     if (msg.type === 'peer-left' || msg.type === 'hangup') {
-      this.status = 'peer-left';
+      if (this.ending) return;
+      this.message = msg.type === 'hangup' ? 'Other participant ended the consultation.' : 'Other participant left.';
+      this.status = 'ended';
+      this.cleanupMedia();
+      this.goToDashboardSoon(1400);
     }
   }
 
@@ -545,21 +621,78 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   sendChat(): void {
     const text = this.chatDraft.trim();
     if (!text || this.status === 'ended' || this.status === 'error') return;
+    this.pushChatMessage({
+      text,
+      kind: 'text',
+    });
+    this.chatDraft = '';
+  }
+
+  shareLabReport(report: any): void {
+    if (this.status === 'ended' || this.status === 'error') return;
+    const results = (report.results || [])
+      .slice(0, 3)
+      .map((res: any) => `${res.parameter_name}: ${res.value}${res.unit ? ' ' + res.unit : ''}`)
+      .join(' · ');
+    const share: ChatReportShare = {
+      reportId: String(report.id),
+      title: report.title || 'Lab report',
+      status: report.status,
+      summary: results || undefined,
+      kind: 'lab',
+    };
+    this.pushChatMessage({
+      text: `Shared lab report: ${share.title}`,
+      kind: 'report',
+      report: share,
+    });
+    this.sidePanel = 'chat';
+  }
+
+  sharePrescription(rx: any): void {
+    if (this.status === 'ended' || this.status === 'error') return;
+    const meds = (rx.medicines || [])
+      .slice(0, 3)
+      .map((m: any) => m.medicine_name)
+      .filter(Boolean)
+      .join(', ');
+    const share: ChatReportShare = {
+      reportId: String(rx.id),
+      title: rx.diagnosis || 'Prescription',
+      status: 'PRESCRIPTION',
+      summary: meds || undefined,
+      kind: 'prescription',
+    };
+    this.pushChatMessage({
+      text: `Shared prescription: ${share.title}`,
+      kind: 'report',
+      report: share,
+    });
+    this.sidePanel = 'chat';
+  }
+
+  private pushChatMessage(input: { text: string; kind: 'text' | 'report'; report?: ChatReportShare }): void {
     this.sendSignal({
       type: 'chat',
-      payload: { text, at: new Date().toISOString() },
+      payload: {
+        text: input.text,
+        kind: input.kind,
+        report: input.report || null,
+        at: new Date().toISOString(),
+      },
     });
     this.chat = [
       ...this.chat,
       {
         id: `${Date.now()}-me`,
-        text,
+        text: input.text,
         fromRole: this.joinInfo?.role || 'me',
         mine: true,
         at: new Date(),
+        kind: input.kind,
+        report: input.report,
       },
     ];
-    this.chatDraft = '';
     this.scrollChat();
   }
 
@@ -581,25 +714,37 @@ export class VideoConsultComponent implements OnInit, OnDestroy {
   }
 
   hangup(): void {
+    if (this.ending) return;
+    this.ending = true;
     this.sendSignal({ type: 'hangup', payload: {} });
     const notes = this.notesForm.getRawValue();
     const payload: Record<string, unknown> = { reason: 'ended_by_user' };
-    if (this.joinInfo?.role === 'doctor' && notes.notes) {
+    if (this.joinInfo?.role === 'doctor' && (notes.notes || notes.diagnosis)) {
       payload['notes'] = notes.notes;
       payload['diagnosis'] = notes.diagnosis || null;
       payload['finalize_consultation'] = true;
     }
     this.videoApi.end(this.sessionId, payload).subscribe({
       next: () => {
-        this.message = 'Consultation ended.';
+        this.message = 'Consultation ended. Returning to dashboard…';
         this.status = 'ended';
         this.cleanupMedia();
+        this.goToDashboardSoon(700);
       },
       error: () => {
         this.cleanupMedia();
         this.status = 'ended';
+        this.message = 'Consultation ended. Returning to dashboard…';
+        this.goToDashboardSoon(700);
       },
     });
+  }
+
+  private goToDashboardSoon(delayMs: number): void {
+    if (this.redirectTimer) clearTimeout(this.redirectTimer);
+    this.redirectTimer = setTimeout(() => {
+      void this.router.navigateByUrl(this.dashboardLink);
+    }, delayMs);
   }
 
   private cleanupMedia(): void {
