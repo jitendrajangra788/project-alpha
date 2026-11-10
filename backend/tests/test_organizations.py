@@ -143,6 +143,23 @@ async def test_org_staff_and_branch_crud(client: AsyncClient):
     assert member["membership_role"] == "NURSE"
     assert member["is_active"] is True
 
+    doctor_add = await client.post(
+        f"/api/v1/organizations/{org_id}/members",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "full_name": "Dr Anita",
+            "mobile": "9777777777",
+            "email": "",
+            "password": "Doctor@123",
+            "membership_role": "DOCTOR",
+            "specialty": "Cardiology",
+            "qualification": "MBBS, MD",
+            "consultation_fee": 700,
+        },
+    )
+    assert doctor_add.status_code == 200, doctor_add.text
+    assert doctor_add.json()["membership_role"] == "DOCTOR"
+
     listed = await client.get(
         f"/api/v1/organizations/{org_id}/members",
         headers={"Authorization": f"Bearer {token}"},

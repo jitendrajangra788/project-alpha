@@ -14,6 +14,7 @@ from app.core.enums import (
     VerificationStatus,
 )
 from app.core.security import hash_password
+from app.models.doctor import Doctor
 from app.models.organization import (
     Organization,
     OrganizationDocument,
@@ -38,6 +39,70 @@ from app.schemas.organization import (
 from app.services.audit import write_audit
 from app.services.auth import assign_role, find_user_by_identifier
 from app.services.storage import storage_service
+
+
+async def _ensure_doctor_profile(
+    db: AsyncSession,
+    *,
+    user: User,
+    org: Organization,
+    specialty: Optional[str] = None,
+    qualification: Optional[str] = None,
+    registration_number: Optional[str] = None,
+    registration_council: Optional[str] = None,
+    years_of_experience: Optional[int] = None,
+    consultation_fee: Optional[float] = None,
+    city: Optional[str] = None,
+    pin_code: Optional[str] = None,
+    about: Optional[str] = None,
+) -> Doctor:
+    result = await db.execute(select(Doctor).where(Doctor.user_id == user.id))
+    doctor = result.scalar_one_or_none()
+    if not doctor:
+        doctor = Doctor(
+            user_id=user.id,
+            specialty=specialty,
+            qualification=qualification,
+            registration_number=registration_number,
+            registration_council=registration_council,
+            years_of_experience=years_of_experience,
+            consultation_fee=consultation_fee,
+            city=city or org.city,
+            pin_code=pin_code or org.pin_code,
+            about=about,
+            verification_status=VerificationStatus.PENDING.value,
+            is_active=True,
+        )
+        db.add(doctor)
+        await db.flush()
+    else:
+        if specialty is not None:
+            doctor.specialty = specialty
+        if qualification is not None:
+            doctor.qualification = qualification
+        if registration_number is not None:
+            doctor.registration_number = registration_number
+        if registration_council is not None:
+            doctor.registration_council = registration_council
+        if years_of_experience is not None:
+            doctor.years_of_experience = years_of_experience
+        if consultation_fee is not None:
+            doctor.consultation_fee = consultation_fee
+        if city is not None:
+            doctor.city = city
+        if pin_code is not None:
+            doctor.pin_code = pin_code
+        if about is not None:
+            doctor.about = about
+        if not doctor.city:
+            doctor.city = org.city
+        if not doctor.pin_code:
+            doctor.pin_code = org.pin_code
+
+    from app.services.marketplace import upsert_listing_for_doctor
+
+    await upsert_listing_for_doctor(db, doctor, user)
+    return doctor
 
 
 def org_to_out(org: Organization) -> OrganizationOut:
@@ -308,24 +373,21 @@ async def add_member(
     db: AsyncSession, org_id: str, actor: User, payload: OrganizationMemberCreate
 ) -> OrganizationMember:
     await _require_org_admin(db, org_id, actor)
+    org = await get_organization_for_user(db, org_id, actor)
     if payload.membership_role == MembershipRole.OWNER:
         raise HTTPException(status_code=400, detail="Cannot assign OWNER via staff invite")
 
     existing_user = await find_user_by_identifier(db, payload.mobile)
-    if existing_user and payload.email and existing_user.email and existing_user.email != str(payload.email):
-        # same mobile ok; conflicting email on different account handled below
-        pass
 
     if not existing_user:
         if not payload.password:
             raise HTTPException(status_code=400, detail="Password required when creating a new staff account")
-        # ensure email uniqueness if provided
         if payload.email:
             email_hit = await find_user_by_identifier(db, str(payload.email))
             if email_hit:
                 raise HTTPException(status_code=409, detail="Email already registered")
         existing_user = User(
-            full_name=payload.full_name,
+            full_name=payload.full_name.strip(),
             mobile=payload.mobile,
             email=str(payload.email) if payload.email else None,
             password_hash=hash_password(payload.password),
@@ -334,14 +396,15 @@ async def add_member(
         db.add(existing_user)
         await db.flush()
     else:
-        # Update profile lightly if owner is re-adding known user
-        existing_user.full_name = payload.full_name
+        existing_user.full_name = payload.full_name.strip()
         if payload.email:
+            email_hit = await find_user_by_identifier(db, str(payload.email))
+            if email_hit and email_hit.id != existing_user.id:
+                raise HTTPException(status_code=409, detail="Email already registered")
             existing_user.email = str(payload.email)
         if payload.password:
             existing_user.password_hash = hash_password(payload.password)
 
-    # Existing membership?
     result = await db.execute(
         select(OrganizationMember).where(
             OrganizationMember.organization_id == org_id,
@@ -367,6 +430,22 @@ async def add_member(
     if role_code:
         await assign_role(db, existing_user, role_code.value)
 
+    if payload.membership_role == MembershipRole.DOCTOR:
+        await _ensure_doctor_profile(
+            db,
+            user=existing_user,
+            org=org,
+            specialty=payload.specialty,
+            qualification=payload.qualification,
+            registration_number=payload.registration_number,
+            registration_council=payload.registration_council,
+            years_of_experience=payload.years_of_experience,
+            consultation_fee=payload.consultation_fee,
+            city=payload.city,
+            pin_code=payload.pin_code,
+            about=payload.about,
+        )
+
     await write_audit(
         db,
         action="organization.member.add",
@@ -375,7 +454,14 @@ async def add_member(
         actor_user_id=actor.id,
         details=f"user={existing_user.id};role={payload.membership_role.value}",
     )
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        msg = str(exc).lower()
+        if "unique" in msg or "duplicate" in msg:
+            raise HTTPException(status_code=409, detail="Mobile or email already registered") from exc
+        raise HTTPException(status_code=400, detail="Could not add staff member") from exc
 
     result = await db.execute(
         select(OrganizationMember)
@@ -389,6 +475,7 @@ async def update_member(
     db: AsyncSession, org_id: str, member_id: str, actor: User, payload: OrganizationMemberUpdate
 ) -> OrganizationMember:
     await _require_org_admin(db, org_id, actor)
+    org = await get_organization_for_user(db, org_id, actor)
     result = await db.execute(
         select(OrganizationMember)
         .options(selectinload(OrganizationMember.user))
@@ -404,6 +491,11 @@ async def update_member(
         raise HTTPException(status_code=400, detail="Cannot promote staff to OWNER here")
 
     data = payload.model_dump(exclude_unset=True)
+    doctor_fields = {
+        key: data.pop(key)
+        for key in ("specialty", "qualification", "registration_number", "consultation_fee")
+        if key in data
+    }
     if "membership_role" in data and data["membership_role"] is not None:
         role = data.pop("membership_role")
         member.membership_role = role.value if isinstance(role, MembershipRole) else role
@@ -422,6 +514,17 @@ async def update_member(
             member.user.email = str(email) if email else None
         if "password" in data and data["password"]:
             member.user.password_hash = hash_password(data.pop("password"))
+
+    if member.user and (member.membership_role == MembershipRole.DOCTOR.value or doctor_fields):
+        await _ensure_doctor_profile(
+            db,
+            user=member.user,
+            org=org,
+            specialty=doctor_fields.get("specialty"),
+            qualification=doctor_fields.get("qualification"),
+            registration_number=doctor_fields.get("registration_number"),
+            consultation_fee=doctor_fields.get("consultation_fee"),
+        )
 
     await write_audit(
         db,
