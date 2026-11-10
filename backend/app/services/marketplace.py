@@ -94,6 +94,22 @@ async def get_category_by_code(db: AsyncSession, code: str) -> Optional[Category
     return result.scalar_one_or_none()
 
 
+async def ensure_category(db: AsyncSession, code: str, name: Optional[str] = None) -> Category:
+    category = await get_category_by_code(db, code)
+    if category:
+        return category
+    category = Category(
+        code=code,
+        name=name or code.replace("-", " ").title(),
+        description=f"Auto-created {code}",
+        sort_order=0,
+        is_active=True,
+    )
+    db.add(category)
+    await db.flush()
+    return category
+
+
 async def upsert_listing_for_organization(db: AsyncSession, org: Organization) -> Listing:
     listing_type = ORG_TYPE_TO_LISTING_TYPE.get(OrganizationType(org.organization_type), ListingType.CLINIC)
     category_code = {
@@ -144,7 +160,7 @@ async def upsert_listing_for_organization(db: AsyncSession, org: Organization) -
 
 
 async def upsert_listing_for_doctor(db: AsyncSession, doctor: Doctor, user: User) -> Listing:
-    category = await get_category_by_code(db, "doctors")
+    category = await ensure_category(db, "doctors", "Doctors")
     result = await db.execute(select(Listing).where(Listing.doctor_id == doctor.id))
     listing = result.scalar_one_or_none()
     is_verified = doctor.verification_status == VerificationStatus.VERIFIED.value
@@ -153,7 +169,7 @@ async def upsert_listing_for_doctor(db: AsyncSession, doctor: Doctor, user: User
     address = doctor.clinic_address or f"{city}, {pin}"
     payload = {
         "listing_type": ListingType.DOCTOR.value,
-        "category_id": category.id if category else None,
+        "category_id": category.id,
         "name": user.full_name,
         "description": doctor.about,
         "specialty": doctor.specialty,

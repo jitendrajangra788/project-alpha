@@ -143,11 +143,19 @@ async def bootstrap_database(*, auto_migrate: bool, auto_seed_three: bool) -> No
             logger.exception("Auto-migrate failed")
             raise
 
-    if auto_seed_three:
+    # Always ensure roles/permissions exist after migrate (required for register/login)
+    if auto_migrate or auto_seed_three:
         try:
             from app.seed import seed
 
             await seed()
+            logger.info("Platform roles/settings seed complete")
+        except Exception:
+            logger.exception("Platform seed failed")
+            raise
+
+    if auto_seed_three:
+        try:
             async with AsyncSessionLocal() as db:
                 result = await seed_three_entries(db)
             logger.info("Auto seed three complete: %s", result)

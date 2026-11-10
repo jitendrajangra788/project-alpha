@@ -1,27 +1,8 @@
 import { Component, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
+import { formatApiError } from '../../core/api-error';
 import { AuthService } from '../../core/auth.service';
-
-function apiError(err: any, fallback: string): string {
-  const detail = err?.error?.detail;
-  if (typeof detail === 'string' && detail.trim()) return detail;
-  if (Array.isArray(detail)) {
-    const parts = detail
-      .map((item: any) => {
-        const field = Array.isArray(item?.loc)
-          ? item.loc.filter((x: unknown) => x !== 'body').join('.')
-          : '';
-        const msg = item?.msg || item?.message || '';
-        return field ? `${field}: ${msg}` : msg;
-      })
-      .filter(Boolean);
-    if (parts.length) return parts.join(' · ');
-  }
-  if (err?.status === 0) return 'Network error. Check your connection and try again.';
-  if (err?.status === 409) return 'Mobile or email already registered. Try login instead.';
-  return fallback;
-}
 
 @Component({
   selector: 'app-register-doctor',
@@ -245,9 +226,9 @@ export class RegisterDoctorComponent {
       },
       error: (err) => {
         this.loading = false;
-        this.error = apiError(err, 'Doctor registration failed. Please try again.');
-        // Duplicate identity → send user back to account step
-        if (err?.status === 409) this.step = 1;
+        this.error = formatApiError(err, 'Doctor registration failed. Please try again.');
+        // Duplicate / account issues → send user back to account step
+        if (err?.status === 409 || /already registered/i.test(this.error)) this.step = 1;
       },
     });
   }

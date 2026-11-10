@@ -1,6 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
+import { formatApiError } from '../../core/api-error';
 import { Organization } from '../../core/models';
 import { OrgMember, OrganizationService } from '../../core/organization.service';
 
@@ -41,23 +42,6 @@ const TITLE_MAP: Record<string, { title: string; description: string; defaultRol
     entity: 'staff',
   },
 };
-
-function apiError(err: any, fallback: string): string {
-  const detail = err?.error?.detail;
-  if (typeof detail === 'string' && detail.trim()) return detail;
-  if (Array.isArray(detail)) {
-    const parts = detail
-      .map((item: any) => {
-        const field = Array.isArray(item?.loc) ? item.loc.filter((x: unknown) => x !== 'body').join('.') : '';
-        const msg = item?.msg || item?.message || '';
-        return field ? `${field}: ${msg}` : msg;
-      })
-      .filter(Boolean);
-    if (parts.length) return parts.join(' · ');
-  }
-  if (detail && typeof detail === 'object' && typeof detail.message === 'string') return detail.message;
-  return fallback;
-}
 
 @Component({
   selector: 'app-staff-manager',
@@ -402,7 +386,7 @@ export class StaffManagerComponent implements OnInit {
         this.loading = false;
       },
       error: (err) => {
-        this.error = apiError(err, 'Failed to load staff.');
+        this.error = formatApiError(err, 'Failed to load staff.');
         this.loading = false;
       },
     });
@@ -507,7 +491,7 @@ export class StaffManagerComponent implements OnInit {
         },
         error: (err) => {
           this.saving = false;
-          this.error = apiError(err, 'Update failed.');
+          this.error = formatApiError(err, 'Update failed.');
         },
       });
       return;
@@ -523,7 +507,10 @@ export class StaffManagerComponent implements OnInit {
       },
       error: (err) => {
         this.saving = false;
-        this.error = apiError(err, 'Add failed. Check mobile/email is unique and password is 8+ characters.');
+        this.error = formatApiError(
+          err,
+          'Add failed. Check mobile/email is unique and password is 8+ characters.',
+        );
       },
     });
   }
@@ -536,7 +523,7 @@ export class StaffManagerComponent implements OnInit {
         this.message = `${m.full_name} removed.`;
         this.reload();
       },
-      error: (err) => (this.error = apiError(err, 'Remove failed.')),
+      error: (err) => (this.error = formatApiError(err, 'Remove failed.')),
     });
   }
 }

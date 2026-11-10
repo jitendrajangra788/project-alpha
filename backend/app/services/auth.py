@@ -38,7 +38,10 @@ async def get_role_by_code(db: AsyncSession, code: str) -> Role:
     result = await db.execute(select(Role).where(Role.code == code))
     role = result.scalar_one_or_none()
     if not role:
-        raise HTTPException(status_code=500, detail=f"Role {code} not seeded")
+        # Self-heal empty Neon/Vercel DBs that migrated without seed
+        role = Role(code=code, name=code.replace("_", " ").title(), description=f"Auto-created {code}")
+        db.add(role)
+        await db.flush()
     return role
 
 
@@ -171,9 +174,12 @@ async def register_doctor(db: AsyncSession, payload: DoctorRegisterRequest) -> t
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Mobile or email already registered",
             ) from exc
+        # Keep actionable detail for operators / UI (truncate noisy SQL)
+        raw = str(exc).strip().replace("\n", " ")
+        hint = raw[:180] if raw else "unknown error"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Could not complete doctor registration. Please check details and try again.",
+            detail=f"Could not complete doctor registration: {hint}",
         ) from exc
 
     user = await load_user(db, user.id)

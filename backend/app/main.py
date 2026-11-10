@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1 import api_router
 from app.core.config import get_settings
@@ -58,6 +61,22 @@ def create_app() -> FastAPI:
 
     app.include_router(api_router, prefix=settings.api_prefix)
 
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(_: Request, exc: StarletteHTTPException):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(_: Request, exc: RequestValidationError):
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception_handler(_: Request, exc: Exception):
+        # Always return JSON so the Angular UI can show a real message (not blank/HTML).
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Internal server error: {str(exc)[:200]}"},
+        )
+
     @app.get("/")
     async def root():
         """API root — website runs on the Angular frontend (port 4200 locally)."""
@@ -69,6 +88,8 @@ def create_app() -> FastAPI:
             "message": "This is the CareConnect API. Open the frontend URL to use the website.",
             "frontend_url": settings.frontend_url,
             "health": f"{settings.api_prefix}/health",
+            "docs": "/docs" if settings.docs_enabled else None,
+            "openapi": openapi_url,
         }
 
     return app
