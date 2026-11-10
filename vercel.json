@@ -17,7 +17,9 @@
     "backend": {
       "root": "backend/",
       "framework": "fastapi",
-      "entrypoint": "app/main.py",
+      "runtime": "python",
+      "entrypoint": "app.main:app",
+      "installCommand": "pip install -r requirements.txt",
       "functions": {
         "app/main.py": {
           "maxDuration": 60,
