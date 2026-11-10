@@ -6,12 +6,11 @@ const fs = require('fs');
 const path = require('path');
 
 const raw = (process.env.API_BASE_URL || '').trim().replace(/\/$/, '');
+// Same-origin default for Vercel multi-service (/api → FastAPI service).
 const apiBaseUrl = raw || '/api/v1';
 
 if (!raw) {
-  console.warn(
-    '[inject-api-url] API_BASE_URL not set — using relative "/api/v1". Set API_BASE_URL on Vercel to your live FastAPI URL.'
-  );
+  console.log('[inject-api-url] API_BASE_URL not set — using same-origin "/api/v1" (Vercel Services).');
 }
 
 const file = path.join(__dirname, '..', 'src', 'environments', 'environment.production.ts');

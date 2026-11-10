@@ -1,0 +1,6 @@
+[tool.vercel]
+entrypoint = "app.main:app"
+
+[tool.vercel.scripts]
+# Dependencies come from requirements.txt; no extra build step required.
+build = "python -c \"print('CareConnect FastAPI ready')\""

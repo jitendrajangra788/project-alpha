@@ -1,58 +1,67 @@
-# CareConnect → Vercel (frontend) + Render (API)
+# CareConnect on Vercel (multi-service)
 
-Poora HCMS **sirf Vercel pe nahi** chal sakta (FastAPI + Postgres chahiye).  
-Is setup me:
+Vercel ab **frontend + backend** ek hi project me Services se deploy karta hai.
 
-| Part | Host |
-|------|------|
-| Angular UI | **Vercel** |
-| FastAPI + Postgres | **Render** (free blueprint) |
+| Service | Path | Folder |
+|---------|------|--------|
+| Angular UI | `/` | `frontend/` |
+| FastAPI | `/api/*` | `backend/` |
 
-## 1) Backend pehle (Render)
+Root `vercel.json` already configures this.
 
-1. [render.com](https://render.com) pe login
-2. **New → Blueprint** → yeh GitHub repo select karo (`render.yaml` auto pick hoga)
-3. Service env me set karo (Vercel URL milne ke baad update karna):
-   - `CORS_ORIGINS` = `https://YOUR-APP.vercel.app`
-   - `FRONTEND_URL` = `https://YOUR-APP.vercel.app`
-4. Deploy ke baad API URL note karo, jaise:  
-   `https://careconnect-api.onrender.com`
-5. Check: `https://careconnect-api.onrender.com/api/v1/health`
+## Import steps (Vercel UI)
 
-## 2) Frontend (Vercel)
+1. Open https://vercel.com/new
+2. Select `jitendrajangra788/project-alpha`
+3. Click **Import multi-service project** (after `vercel.json` is on `main`)
+4. Deploy
 
-1. [vercel.com](https://vercel.com) → **Add New Project** → same GitHub repo
-2. **Root Directory**: repo root chhodo (root `vercel.json` already set hai)
-3. Framework: Other / no framework (vercel.json controls build)
-4. Environment Variable add karo:
+Agar purana warning dikhe (“needs a vercel.json”), page refresh / re-import karo — `main` pe latest commit hona chahiye.
+
+## Environment variables (Project → Settings → Environment Variables)
+
+Backend ke liye **required**:
+
+| Name | Example |
+|------|---------|
+| `APP_ENV` | `production` |
+| `SECRET_KEY` | 32+ random chars |
+| `DATABASE_URL` | Neon/Supabase Postgres URL (`postgres://…` OK) |
+| `CORS_ORIGINS` | `https://YOUR-APP.vercel.app` |
+| `FRONTEND_URL` | `https://YOUR-APP.vercel.app` |
+| `REDIS_OPTIONAL` | `true` |
+| `RAZORPAY_MOCK` | `true` |
+| `TRUSTED_HOSTS` | `*` |
+| `ENABLE_DOCS` | `true` (optional) |
+
+Frontend (optional — same-origin default already works):
 
 | Name | Value |
 |------|--------|
-| `API_BASE_URL` | `https://careconnect-api.onrender.com/api/v1` |
+| `API_BASE_URL` | `/api/v1` |
 
-5. Deploy
+> Postgres free host: [Neon](https://neon.tech) or [Supabase](https://supabase.com).  
+> Vercel pe SQLite mat use karo (ephemeral disk).
 
-Build automatically:
-- `npm install --prefix frontend`
-- `npm run build:vercel` (injects API URL + production Angular build)
-- serves `frontend/dist/frontend/browser`
-
-## 3) CORS sync
-
-Vercel URL milne ke baad Render pe `CORS_ORIGINS` / `FRONTEND_URL` update karke API **redeploy** karo.
-
-## Local test of Vercel build
+After first deploy, run migrations once (local against production DB or a one-off job):
 
 ```bash
-cd frontend
-$env:API_BASE_URL="http://localhost:8000/api/v1"
-npm run build:vercel
+cd backend
+$env:DATABASE_URL="postgresql+asyncpg://..."
+$env:DATABASE_URL_SYNC="postgresql+psycopg://..."
+alembic upgrade head
+python -m app.seed
 ```
 
-Output: `frontend/dist/frontend/browser`
+## Local check
+
+```bash
+# From repo root
+npx vercel dev
+```
 
 ## Notes
 
-- Free Render web service sleep ho sakta hai; pehla request slow ho sakta hai.
-- WebRTC / uploads ke liye production me paid plan + persistent disk better hai.
-- Seed admin (default): `admin@careconnect.local` / `Admin@12345` — pehle change karo.
+- API health: `https://YOUR-APP.vercel.app/api/v1/health`
+- Video/WebRTC & large uploads have serverless limits; for heavy production prefer Render/Fly for API.
+- Free Neon + Vercel is enough to open the full UI + login flows.
