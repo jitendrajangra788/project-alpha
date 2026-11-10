@@ -69,8 +69,12 @@ import { Category } from '../core/marketplace.service';
     }
     .suggestions a:hover { border-color: var(--cc-teal); color: var(--cc-teal); }
     @media (max-width: 900px) {
-      .panel { grid-template-columns: 1fr; }
-      .search-btn { width: 100%; }
+      .panel { grid-template-columns: 1fr; padding: 0.85rem; gap: 0.65rem; }
+      .search-btn { width: 100%; min-width: 0; }
+    }
+    @media (max-width: 560px) {
+      .panel { border-radius: 16px; }
+      .suggestions { gap: 0.4rem; font-size: 0.82rem; }
     }
   `,
 })

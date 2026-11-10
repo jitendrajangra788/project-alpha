@@ -105,6 +105,18 @@ import { ADMIN_ROLES, PROVIDER_ROLES } from '../core/models';
           <a routerLink="/list-your-business" (click)="closeMenus()">List Your Business</a>
           @if (auth.isAuthenticated()) {
             <a routerLink="/my-bookings" (click)="closeMenus()">My Bookings</a>
+            @if (auth.hasAnyRole(['PATIENT'])) {
+              <a routerLink="/patient" (click)="closeMenus()">Patient Panel</a>
+            }
+            @if (auth.hasAnyRole(['DOCTOR'])) {
+              <a routerLink="/doctor" (click)="closeMenus()">Doctor Panel</a>
+            }
+            @if (auth.hasAnyRole(adminRoles)) {
+              <a routerLink="/admin" (click)="closeMenus()">Admin Panel</a>
+            }
+            @if (auth.hasAnyRole(providerRoles)) {
+              <a routerLink="/provider" (click)="closeMenus()">Hospital / Provider</a>
+            }
             <button type="button" (click)="auth.logout(); closeMenus()">Logout</button>
           } @else {
             <a routerLink="/login" (click)="closeMenus()">Login</a>
@@ -373,6 +385,8 @@ import { ADMIN_ROLES, PROVIDER_ROLES } from '../core/models';
     @media (max-width: 1180px) {
       .bar {
         grid-template-columns: auto auto;
+        height: 64px;
+        gap: 0.75rem;
       }
       .nav,
       .actions {
@@ -380,6 +394,32 @@ import { ADMIN_ROLES, PROVIDER_ROLES } from '../core/models';
       }
       .mobile-tools {
         display: flex;
+      }
+      .brand-text small {
+        display: none;
+      }
+      .mark {
+        width: 38px;
+        height: 38px;
+        border-radius: 11px;
+      }
+      .drawer {
+        max-height: min(78vh, 640px);
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: max(1.2rem, env(safe-area-inset-bottom));
+      }
+    }
+    @media (max-width: 480px) {
+      .bar {
+        height: 58px;
+      }
+      .brand-text strong {
+        font-size: 1rem;
+      }
+      .icon-btn {
+        width: 40px;
+        height: 40px;
       }
     }
   `,

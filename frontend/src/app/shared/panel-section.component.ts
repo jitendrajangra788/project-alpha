@@ -110,6 +110,12 @@ import { ClinicalService } from '../core/clinical.service';
     .banner { padding: 0.65rem 0.85rem; color: var(--cc-slate); }
     .banner.error { color: var(--cc-danger); border-color: #fecaca; background: #fff7f7; }
     .note { margin: 0; color: var(--cc-slate-soft); font-size: 0.86rem; }
+    @media (max-width: 560px) {
+      .head { gap: 0.5rem; }
+      h2 { font-size: 1.05rem; }
+      .stats { grid-template-columns: 1fr 1fr; }
+      th, td { padding: 0.55rem 0.65rem; font-size: 0.84rem; }
+    }
   `,
 })
 export class PanelSectionComponent implements OnInit {

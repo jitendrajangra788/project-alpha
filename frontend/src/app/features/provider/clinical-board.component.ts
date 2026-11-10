@@ -329,7 +329,16 @@ const BOARDS: Record<BoardKind, BoardConfig> = {
       margin: 0; padding: 0.7rem 0.9rem; color: var(--dash-muted); font-size: 0.8rem;
       background: #f8fbff; border-top: 1px solid var(--dash-border);
     }
-    @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 900px) {
+      .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .toolbar { align-items: start; }
+    }
+    @media (max-width: 560px) {
+      .kpis { grid-template-columns: 1fr; }
+      h2 { font-size: 1.05rem; }
+      .actions { width: 100%; }
+      .actions .cc-btn { flex: 1 1 auto; }
+    }
   `,
 })
 export class ClinicalBoardComponent implements OnInit {

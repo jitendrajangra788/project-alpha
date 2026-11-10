@@ -166,7 +166,12 @@ import { DashKpiComponent } from '../../shared/dash-kpi.component';
     .empty { margin: 0; color: var(--dash-muted); }
     @media (max-width: 1200px) { .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
     @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-    @media (max-width: 560px) { .kpis { grid-template-columns: 1fr; } }
+    @media (max-width: 560px) {
+      .kpis { grid-template-columns: 1fr; }
+      .hero-actions { width: 100%; }
+      .hero-actions .cc-btn { flex: 1 1 auto; text-align: center; }
+      h2 { font-size: 1.1rem; }
+    }
   `,
 })
 export class PatientDashboardComponent implements OnInit {

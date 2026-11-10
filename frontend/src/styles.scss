@@ -75,6 +75,8 @@
 html,
 body {
   height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -110,6 +112,41 @@ h3,
 
 .cc-section {
   padding: 4.5rem 0;
+}
+
+/* Global mobile safety */
+.cc-dash,
+.cc-dash * {
+  box-sizing: border-box;
+}
+
+.cc-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 720px) {
+  .cc-container {
+    width: min(var(--cc-container), calc(100% - 1.25rem));
+  }
+  .cc-section {
+    padding: 2.5rem 0;
+  }
+  .cc-section-title {
+    font-size: clamp(1.45rem, 6vw, 1.9rem);
+  }
+  .cc-btn {
+    min-height: 44px;
+    padding: 0.65rem 1.05rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .cc-section {
+    padding: 2rem 0;
+  }
 }
 
 .cc-section-title {

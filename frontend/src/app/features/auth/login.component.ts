@@ -439,15 +439,16 @@ import { PlatformService } from '../../core/platform.service';
     .card-foot a:hover { text-decoration: underline; }
 
     @media (max-width: 960px) {
-      .auth { grid-template-columns: 1fr; }
-      aside { min-height: auto; padding-bottom: 1.75rem; }
-      aside h1 { max-width: none; }
+      .auth { grid-template-columns: 1fr; min-height: auto; }
+      aside { min-height: auto; padding: 1.25rem 1.1rem 1.5rem; }
+      aside h1 { max-width: none; font-size: clamp(1.55rem, 6vw, 2rem); }
       .aside-foot { display: none; }
     }
     @media (max-width: 520px) {
       .points, .regs { grid-template-columns: 1fr; }
-      .card { padding: 1.4rem 1.15rem 1.15rem; border-radius: 22px; }
-      h2 { font-size: 1.7rem; }
+      .card { padding: 1.2rem 1rem 1rem; border-radius: 18px; margin: 0.75rem; }
+      h2 { font-size: 1.45rem; }
+      .main { padding: 0 0 1.25rem; }
     }
   `,
 })

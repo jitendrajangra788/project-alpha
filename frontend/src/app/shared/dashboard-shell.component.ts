@@ -308,21 +308,35 @@ export interface DashNavGroup {
       display: none; width: 40px; height: 40px; border-radius: 10px;
       border: 1px solid var(--dash-border); background: white; cursor: pointer;
     }
-    .content { padding: 0.85rem 1rem 1.15rem; max-width: 1480px; }
+    .content { padding: 0.85rem 1rem 1.15rem; max-width: 1480px; width: 100%; }
 
     @media (max-width: 1100px) {
-      .search { min-width: 200px; order: 5; flex: 1 1 100%; margin-left: 0; }
-      .titles { flex: 1; }
+      .search { min-width: 0; order: 5; flex: 1 1 100%; margin-left: 0; }
+      .titles { flex: 1; min-width: 0; }
+      .top h1 { font-size: 1.05rem; }
+      .top p { display: none; }
     }
     @media (max-width: 980px) {
       .shell { grid-template-columns: 1fr; }
       aside {
-        position: fixed; inset: 0 auto 0 0; width: min(300px, 90vw);
+        position: fixed; inset: 0 auto 0 0; width: min(300px, 88vw);
+        max-width: 320px;
         transform: translateX(-105%); transition: transform 0.2s ease;
+        padding-top: max(0.75rem, env(safe-area-inset-top));
+        padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
       }
       .shell.open aside { transform: translateX(0); }
       .menu-btn { display: inline-grid; place-items: center; }
-      .user small { display: none; }
+      .user { padding-right: 0.35rem; }
+      .user > div { display: none; }
+      .content { padding: 0.7rem 0.7rem 1.25rem; }
+      .top { padding: 0.55rem 0.7rem; gap: 0.55rem; }
+    }
+    @media (max-width: 560px) {
+      .search { padding: 0.3rem 0.7rem; }
+      .bell, .menu-btn, .user .avatar { width: 38px; height: 38px; }
+      .content { padding: 0.55rem 0.55rem 1.4rem; }
+      .top h1 { font-size: 0.98rem; }
     }
   `,
 })

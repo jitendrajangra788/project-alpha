@@ -220,7 +220,16 @@ const TITLE_MAP: Record<string, { title: string; description: string; defaultRol
     .acts { display: flex; gap: 0.35rem; justify-content: flex-end; }
     .danger { color: #b42318 !important; }
     .empty, .muted { color: var(--dash-muted); padding: 1rem 0.9rem; }
-    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .filters { flex-direction: column; }
+      label, input, select { min-width: 0; width: 100%; }
+    }
+    @media (max-width: 560px) {
+      .toolbar { align-items: stretch; }
+      .toolbar .cc-btn { width: 100%; }
+      .acts { flex-wrap: wrap; }
+    }
   `,
 })
 export class StaffManagerComponent implements OnInit {

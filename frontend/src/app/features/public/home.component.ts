@@ -315,8 +315,16 @@ import { FaqAccordionComponent, FaqItem } from '../../shared/faq-accordion.compo
     @media (max-width: 980px) {
       .hero-grid, .home-split, .faq-wrap, .steps, .why-grid { grid-template-columns: 1fr; }
       .trust { grid-template-columns: 1fr; }
-      .visual, .photo { min-height: 260px; }
+      .visual, .photo, .home-photo { min-height: 240px; }
       .checklist { grid-template-columns: 1fr; }
+      .cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .cards { grid-template-columns: 1fr; }
+      .head { align-items: start; }
+    }
+    @media (max-width: 560px) {
+      .cat-grid, .test-grid, .provider-grid { grid-template-columns: 1fr; }
+      .search-wrap { margin-top: -0.75rem; padding-inline: 0; }
+      .visual, .photo, .home-photo { min-height: 200px; border-radius: 18px; }
     }
   `,
 })

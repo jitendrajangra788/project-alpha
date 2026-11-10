@@ -163,6 +163,9 @@ import { DashKpiComponent } from '../../shared/dash-kpi.component';
     }
     @media (max-width: 560px) {
       .kpis, .modules { grid-template-columns: 1fr; }
+      .hero-actions { width: 100%; }
+      .hero-actions .cc-btn { flex: 1 1 calc(50% - 0.3rem); text-align: center; }
+      .hero h2 { font-size: 1.1rem; }
     }
   `,
 })
