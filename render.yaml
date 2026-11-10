@@ -1,0 +1,45 @@
+# CareConnect API on Render (frontend stays on Vercel).
+# 1) Render → New → Blueprint → select this repo (render.yaml)
+# 2) Set CORS_ORIGINS + FRONTEND_URL to your Vercel URL (https://xxx.vercel.app)
+# 3) On Vercel set API_BASE_URL=https://careconnect-api.onrender.com/api/v1 and Redeploy
+
+services:
+  - type: web
+    name: careconnect-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        value: CareConnect
+      - key: API_PREFIX
+        value: /api/v1
+      - key: SECRET_KEY
+        generateValue: true
+      - key: REDIS_OPTIONAL
+        value: "true"
+      - key: RAZORPAY_MOCK
+        value: "true"
+      - key: ENABLE_DOCS
+        value: "true"
+      - key: TRUSTED_HOSTS
+        value: "*"
+      - key: CORS_ORIGINS
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: careconnect-db
+          property: connectionString
+
+databases:
+  - name: careconnect-db
+    plan: free
+    databaseName: careconnect
+    user: careconnect

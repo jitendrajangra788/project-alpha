@@ -1,0 +1,15 @@
+.venv
+venv
+__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.htmlcov
+.coverage
+*.pyc
+uploads
+careconnect.db
+.env
+.env.*
+*.md
+tests

@@ -1,0 +1,71 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: careconnect-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-careconnect}
+      POSTGRES_USER: ${POSTGRES_USER:-careconnect}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - careconnect_pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-careconnect} -d ${POSTGRES_DB:-careconnect}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: careconnect-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - careconnect_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./backend
+    container_name: careconnect-api
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-careconnect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-careconnect}
+      DATABASE_URL_SYNC: postgresql+psycopg://${POSTGRES_USER:-careconnect}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-careconnect}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_OPTIONAL: "false"
+      RAZORPAY_MOCK: ${RAZORPAY_MOCK:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - careconnect_uploads:/app/uploads
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        API_BASE_URL: /api/v1
+    container_name: careconnect-web
+    ports:
+      - "${WEB_PORT:-80}:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  careconnect_pgdata:
+  careconnect_redis:
+  careconnect_uploads:
