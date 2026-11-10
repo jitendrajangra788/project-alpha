@@ -17,6 +17,13 @@ async def lifespan(_: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+    if settings.auto_migrate or settings.auto_seed_three:
+        from app.bootstrap import bootstrap_database
+
+        await bootstrap_database(
+            auto_migrate=settings.auto_migrate,
+            auto_seed_three=settings.auto_seed_three,
+        )
     yield
 
 

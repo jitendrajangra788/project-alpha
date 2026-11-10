@@ -50,23 +50,35 @@ Project → Settings → Environment Variables:
 
 `DATABASE_URL` usually comes from Neon connection — do not invent it.
 
-## 4) Run migrations once
+## 4) First boot: migrate + 3 demo entries
 
-After Neon is connected, pull env and migrate:
+After Neon is connected, add these env vars (Production), then **Redeploy**:
 
-```bash
-npx vercel env pull backend/.env.vercel --yes --environment=production
-cd backend
-# copy DATABASE_URL into shell, then:
-python scripts/init_db.py
-```
+| Name | Value |
+|------|--------|
+| `AUTO_MIGRATE` | `true` |
+| `AUTO_SEED_THREE` | `true` |
 
-Or locally:
+On first API cold start this will:
+1. Run Alembic migrations
+2. Seed roles + **3 entries**: Admin, Patient, Hospital
+
+| Login | Password |
+|-------|----------|
+| `admin@careconnect.local` | `Admin@12345` |
+| `patient@careconnect.local` | `Demo@12345` |
+| `hospital@careconnect.local` | `Demo@12345` |
+
+After it works once, set `AUTO_SEED_THREE=false` (keep `AUTO_MIGRATE=true` if you want).
+
+Manual local seed against Neon:
 
 ```powershell
 $env:DATABASE_URL="postgres://…from Neon…"
 $env:DATABASE_URL_SYNC=$env:DATABASE_URL
+cd backend
 python scripts/init_db.py
+python scripts/seed_three_entries.py
 ```
 
 ## 5) Redeploy

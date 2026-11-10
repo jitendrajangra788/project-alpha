@@ -68,7 +68,9 @@ class Settings(BaseSettings):
             url = "postgresql://" + url[len("postgres://") :]
         if url.startswith("postgresql://") and "+asyncpg" not in url and "+psycopg" not in url:
             url = "postgresql+asyncpg://" + url[len("postgresql://") :]
-        return _ensure_postgres_ssl(url, async_driver=True)
+        if url.startswith("postgresql"):
+            return _ensure_postgres_ssl(url, async_driver=True)
+        return url
 
     @field_validator("database_url_sync", mode="before")
     @classmethod
@@ -82,7 +84,9 @@ class Settings(BaseSettings):
             url = "postgresql+psycopg://" + url[len("postgresql+asyncpg://") :]
         elif url.startswith("postgresql://") and "+psycopg" not in url:
             url = "postgresql+psycopg://" + url[len("postgresql://") :]
-        return _ensure_postgres_ssl(url, async_driver=False)
+        if url.startswith("postgresql"):
+            return _ensure_postgres_ssl(url, async_driver=False)
+        return url
 
     redis_url: str = "redis://localhost:6379/0"
     redis_optional: bool = True
@@ -116,6 +120,9 @@ class Settings(BaseSettings):
     enable_docs: Optional[bool] = None  # None = auto (on in non-prod)
     log_level: str = "INFO"
     metrics_enabled: bool = True
+    # Vercel/Neon first boot helpers
+    auto_migrate: bool = False
+    auto_seed_three: bool = False
 
     @property
     def is_production(self) -> bool:
