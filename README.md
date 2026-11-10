@@ -101,11 +101,11 @@ pytest -q
 - Auto-sync listings when orgs/doctors register or get verified
 - Demo seed data clearly unlabeled as verified (`python -m app.seed_marketplace`)
 
-## Deploy (Vercel frontend)
+## Deploy (Vercel multi-service)
 
-See **[DEPLOY_VERCEL.md](DEPLOY_VERCEL.md)** — Angular on Vercel + FastAPI/Postgres on Render.
+See **[DEPLOY_VERCEL.md](DEPLOY_VERCEL.md)** — Angular (`/`) + FastAPI (`/api`) in one Vercel project via `services` in `vercel.json`.
 
-Quick: connect this repo to Vercel (uses root `vercel.json`), set env `API_BASE_URL` to your live API (`…/api/v1`), then deploy.
+Quick: Import multi-service project on Vercel, set `DATABASE_URL` + `SECRET_KEY` + `CORS_ORIGINS`, deploy.
 
 ## Project layout
 
