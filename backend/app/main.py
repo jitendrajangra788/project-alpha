@@ -19,7 +19,11 @@ from app.core.middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 async def lifespan(_: FastAPI):
     settings = get_settings()
     configure_logging(settings.log_level)
-    Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+    try:
+        Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # Vercel package FS is read-only; storage service falls back to /tmp.
+        Path("/tmp/careconnect-uploads").mkdir(parents=True, exist_ok=True)
     if settings.auto_migrate or settings.auto_seed_three:
         from app.bootstrap import bootstrap_database
 

@@ -1,9 +1,17 @@
+import os
 from functools import lru_cache
 from typing import List, Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_upload_dir() -> str:
+    # Vercel / Lambda package dir is read-only; only /tmp is writable.
+    if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return "/tmp/careconnect-uploads"
+    return "./uploads"
 
 
 def _ensure_postgres_ssl(url: str, *, async_driver: bool) -> str:
@@ -91,8 +99,19 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_optional: bool = True
 
-    upload_dir: str = "./uploads"
+    upload_dir: str = Field(default_factory=_default_upload_dir)
     max_upload_mb: int = 10
+
+    @field_validator("upload_dir", mode="before")
+    @classmethod
+    def normalize_upload_dir(cls, value: object) -> object:
+        """Force writable path on serverless even if UPLOAD_DIR=./uploads is set."""
+        if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+            raw = str(value or "").strip() or "./uploads"
+            # Relative or /var/task paths are not writable on Vercel
+            if not raw.startswith("/tmp"):
+                return "/tmp/careconnect-uploads"
+        return value
 
     seed_admin_email: str = "admin@careconnect.local"
     seed_admin_password: str = "Admin@12345"
